@@ -1,0 +1,9 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+This program erases the user/program flash, as a result a power cycle
+or reset causes the bsl to start.
+
+This flash01 program runs in sram, follow the openocd instructions to
+load and run the flash01.sram.elf program at 0x01000000

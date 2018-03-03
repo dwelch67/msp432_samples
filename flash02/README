@@ -1,0 +1,12 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+This one erases the user/program flash and places a simple led blinker
+program.  If you had something there it gets wiped out, you have been
+warned.
+
+When you power cycle or reset it runs the blinker program.
+
+This flash02 program runs in sram, follow the openocd instructions to
+load and run the flash02.sram.elf program at 0x01000000

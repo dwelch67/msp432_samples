@@ -1,0 +1,12 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+This one erases the user/program flash and places a program that
+only stops the WDT and then goes into a loop.  If you had something
+there it gets wiped out, you have been warned.
+
+When you power cycle or reset it runs the blinker program.
+
+This flash03 program runs in sram, follow the openocd instructions to
+load and run the flash03.sram.elf program at 0x01000000

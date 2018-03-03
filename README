@@ -1,0 +1,337 @@
+
+Naturally all web links and filenames are subject to change, they
+are maintained by ti or others.
+
+This repository provides information on how to create and run baremetal
+programs on the MSP-EXP432P401R launchpad.
+
+http://ti.com/launchpad
+
+The page is a moving target, it should have a way to show you the
+available launchpads.  These are just eval/breakout boards for a
+number of their product (families).
+
+The one we care about here is the MSP-EXP432P401R.  As of this writing
+very affordable at $12.99.
+
+The MSP432 is not to be confused with the MSP430 products.  The
+MSP430 is a processor and chips that ti has used for a long time, their
+processor.  The MSP432 is a ti product line that includes an ARM
+Cortex-M4 processor.
+
+Like many similar products from various vendors this board contains
+two microcontrollers, one is on the debug end of the board, we dont
+write software for that one, that one gets us access to the second
+MCU which we do write software for.  Basically a debug MCU and a target
+MCU.  The debug MCU on this board which is on the USB connector end
+of the board, provides two important interfaces.  First is a virtual
+serial interface, ACM or CDC ACM.  On linux this will show up as
+/dev/ttyACM0 (if you have no other ACM devices, numbers will increase
+if you have more).
+
+dmesg shows
+
+[10239.081502] usb 1-3.4.1: new full-speed USB device number 9 using ehci-pci
+[10239.190612] usb 1-3.4.1: New USB device found, idVendor=0451, idProduct=bef3
+[10239.190615] usb 1-3.4.1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[10239.190616] usb 1-3.4.1: Product: XDS110 (02.02.05.01) with CMSIS-DAP
+[10239.190618] usb 1-3.4.1: Manufacturer: Texas Instruments
+[10239.190619] usb 1-3.4.1: SerialNumber: M3333333
+[10239.191034] cdc_acm 1-3.4.1:1.0: ttyACM0: USB ACM device
+[10239.191667] cdc_acm 1-3.4.1:1.3: ttyACM1: USB ACM device
+[10239.192745] hid-generic 0003:0451:BEF3.0006: hiddev0,hidraw4: USB HID v1.11 Device [Texas Instruments XDS110 (02.02.05.01) with CMSIS-DAP] on usb-0000:00:12.2-3.4.1/input5
+
+So in this case /dev/ttyACM0 is the virtual serial port we care about.
+
+The debug MCU also provides us with an XDS110 (CMSIS-DAP) to the SWD
+(serial wire debug) interface on/in the ARM core.  Note ARM makes
+processor cores not chips, ti makes this chip.  This chip is more than
+just a Cortex-M4 from ARM it has memory, flash, quite a few peripherals
+probably none of which are from ARM logic, some may be purchased IP
+just like the Cortex-M4.  Since most of the code we write for these
+chips is manipulating the non-ARM logic it makes the most sense when
+talking about or asking questions to use ti chip terminology
+MSP432P401R rathe than Cortex-M4.  If the question or conversation is
+specifically about things in the Cortex-M4, then that term would make
+sense.  Also note that not all Cortex-M4's are identical, ARM may
+have compile time options that the chip vendor may use and another
+may not, so what you learn about this specific Cortex-M4 may not
+exactly match another.  See the ARM documentation below to understand
+the major (documented) items the chip vendor might add/remove.
+
+This repository was created on a Linux machine using Linux based
+commands.  Should be easy for you as a programmer to take what is here
+and use it on a Mac or Windows PC.
+
+With the board providing USB access to the target MCU uart as well
+as SWD access for programming/debugging through the Cortex-M4 we
+do not need additional hardware for those two critical interfaces.
+
+The approach I am going to take with these examples is I am going to
+provide a simple (uart based) bootloader, that you will program on
+the application (user) flash through which you can then use to program
+the rest of the examples into another area of the flash.  The bootloader
+will example a user button on the board, if pressed when power comes
+on or reset is released, it will go into bootloader mode, if not
+pressed then it will branch to the application.
+
+While many folks design their MCU products with a bootloader in this
+fasion, many others do not, the application is loaded at the reset
+entry point.  Some chip vendors, like ti on this chip, have bootloaders
+they provide that can be used for in circuit programming as well.  Ti's
+is called BSL and you can read up on it if you like, because this
+is an eval/development board and has a debugger on the board you may
+or may not have full access to the ti bootloader features, when creating
+a product you likely will not have added a lot of debug hardware to
+the board, but a few test pads or a connector and you can take advantage
+of either the ti built into the chip solution, or your own personal
+bootloader solution (or both).  I recommend you push the hardware
+design team for some solution that allows you to at least reprogram
+the firmware on the chip in circuit, ideally without the need for a
+soldering iron or other solder melting device.  A clip or connector
+solution.  My two cents...
+
+There is a free and open source JTAG/SWD tool that works on Linux
+and Windows and I would assume a Mac called openocd.  Openocd supports
+a wide range of ARM processor cores, plus board and chip vendors have
+provided additional support, in order to get to the ARM core you
+have to go through the chip vendors chip, and as in cases like this
+through the board vendors board, debug header/solution, etc.  Basically
+in this case have to get through the debugger using the XDS110
+interface/protocol to then get at the chip and then to the ARM core.
+
+We are using openocd to get at the on chip debugger through which
+we can gain access to the ARM bus from which we can do anything the
+ARM can do, talk to the peripherals, write programs into the flash
+or into ram and then run them.  Back in the early flash memory days
+when they were parallel interfaces likely on an external chip from
+intel, all a debugger needed to know was what is the base address in
+the processors address space for this flash.  From there the debugger
+software (openocd for example) knew how to talk to the flash and
+program it.  But, today we dont have that, the flash is not a
+separate chip from intel with a common/well known programming interface.
+Instead we have vendor or chip specific flash controllers that do not
+share one common programming interface/protocol.  And it is not
+up to the openocd folks to provide this necessarily, like most things
+open source if a chip vendor or some eager individual chooses to add
+this great, if not, then oh well.
+
+To shorten my general solution, while there are exceptions, we often
+have on chip or on board ram (SRAM) and we often have a peripheral
+interface to the flash controller such that programs running on the
+processor can erase and write portions of the flash that are not being
+used by that running program.  One thing that most if not all useful
+debug tools like openocd and JTAG/SWD provide is the ability to write
+a program to SRAM and run it there.  Put those things together and if
+you write a program for that chip/processor that has the ability
+in YOUR program to write the flash, you do not need the debug tool to
+have that ability it only needs the ability to load a program to SRAM
+and run it.  So from the time I first saw this chip/board to the
+present someone may have added support to write the flash using an
+openocd command, I am not aware of it nor using it.
+
+You can probably apt-get install openocd to get openocd on your
+development machine, if that was not built with cmsis-dap support you
+will need to build from sources.  At the time of this writing:
+
+git clone git://repo.or.cz/openocd.git
+cd openocd
+./bootstrap
+./configure --enable-cmsis-dap
+make
+sudo make install
+
+I have some more personal preferences.  I tend to keep my openocd
+config file(s) with the project and not hope that what I need is in
+some path somewhere.  I have a msp432.cfg file that I built from
+other cfg files for this board/target.  You only need this one file
+for openocd.  Another personal preference is I have no use whatsoever
+for gdb or other similar tools, I use the telnet interface to openocd
+to load and start and stop programs.  There is a gdb interface you
+are welcome to try to use.  Openocd is designed such that when you
+run it it provides a "server" program that you then interface to through
+a (real or virtual) network interface, in my case you telnet into it.
+So we will need multiple command line windows open.
+
+in one window
+
+openocd -f msp432.cfg
+
+I see this output on that window
+
+Open On-Chip Debugger 0.10.0+dev-00313-gbae7605 (2018-03-03-00:17)
+Licensed under GNU GPL v2
+For bug reports, read
+    http://openocd.org/doc/doxygen/bugs.html
+Info : auto-selecting first available session transport "swd". To override use 'transport select <transport>'.
+adapter speed: 1000 kHz
+adapter_nsrst_delay: 100
+cortex_m reset_config sysresetreq
+Info : Listening on port 44079 for tcl connections
+Info : Listening on port 4444 for telnet connections
+Info : CMSIS-DAP: SWD  Supported
+Info : CMSIS-DAP: JTAG Supported
+Info : CMSIS-DAP: Interface Initialised (SWD)
+Info : CMSIS-DAP: FW Version = 1.0
+Info : SWCLK/TCK = 1 SWDIO/TMS = 1 TDI = 1 TDO = 0 nTRST = 0 nRESET = 1
+Info : CMSIS-DAP: Interface ready
+Info : clock speed 1000 kHz
+Info : SWD DPIDR 0x2ba01477
+Info : cortex_m.cpu: hardware has 6 breakpoints, 4 watchpoints
+Info : Listening on port 32772 for gdb connections
+
+In particular we are looking for it NOT to exit, and we are looking for
+the line with the breakpoints and watchpoints.  These things indicate
+that openocd is in communication with the on chip debugger in the
+processor core.  Knowing that we can move to the next window.
+
+in another window
+
+telnet localhost 4444
+
+You should see some output ending with this
+
+Open On-Chip Debugger
+>
+
+To run a program in SRAM
+
+> halt
+> load_image /path/to/myprog.elf
+> resume 0x01000000
+
+Whatever directory you run the openocd server in is the base directory
+so if you are in your programs development directory then you dont
+need the path
+
+So for example if you are in this directory with this README and
+msp432.cfg when you run openocd -f msp432.cfg then
+
+> halt
+> load_image /blinker01/blinker01.sram.elf
+> resume 0x01000000
+
+If you instead are in the blinker01 directory then you would run
+openocd -f ../msp432.cfg to start the server then
+
+> halt
+> load_image blinker01.sram.elf
+> resume 0x01000000
+
+To run the sram version of the program.
+
+I did say these were going to be flash based examples that load/launch
+through my bootloader, but, you can also generally run them as
+shown above.  To get the bootloader loaded we need to understand this
+sram loading approach.
+
+The board comes with some demo application, I erased mine ages ago
+so dont know what it did and perhaps it has changed over time.  These
+examples generally assume that you have wiped (destroyed) that as shipped
+application and have loaded one of these examples.  You have been warned.
+This should not adversly affect you the purpose of buying this board
+was to wipe that application and make and load your own.
+
+So to digress further many of these examples have an sram binary
+something.sram.elf that you can load and run in sram, and a
+something.elf which is the program you load using the bootloader.
+And perhaps a something.flash.elf that you can load using my SRAM
+bootloader, more on that shortly.
+
+Normally I start with blinker examples that just blink the led using
+more peripherals and/or information.  Blinking an led is the
+printf("Hello World\n"); equivalent in baremetal.  It is also your
+number one debug tool.  The uart is the number two tool, make sure
+the hardware design team provides both or at least a uart access for
+your product.  Ideally all three, LED, uart and SWD.  The gpio being
+one of the easier peripherals to get working blind without hardware
+debugger help (remember many of these chips have built in bootloaders
+that let you load programs to flash but are not debuggers you cant see
+what happened to the program), from there you can explore the timers
+to confirm or get a feel for how fast the processor is running, leading
+up to the uart, having a rough idea what the out of reset clock speed
+situation is you can then setup the uart divisors and get the uart up
+hopefully without a scope (oscilloscope), but sometimes you need that
+(number three tool).  I did all of this, am starting you off well
+down the road with the bootloader then working backward to the blinkers.
+
+The as shipped firmware modifies clocks, configures peripherals, so if
+you use a debugger like openocd to stop it then load and run a program
+in SRAM then your uart divisor may be wrong, some peripherals may
+be in a strange state, etc.  So the first examples, before we get to
+the bootloader put us in known states.
+
+flash01, this sram based program erases the user/program flash which
+on this chip when you reset and there is no program there causes
+the BSL to boot (built into the chip bootloader).
+
+flash02, this sram based program erases the flash and leaves a simple
+LED blinker program.  You can start here and basically have your
+first baremetal program running that you can "see" is running.  You
+can change the delay in the program and see the LED change its blink
+rate demonstrating that you are really running a program that you built
+on the board.
+
+flash03, this is the baseline program you want to use to for sram based
+develoment.  This program erases the flash and places a program that
+only stops the WDT (watch dog timer), then goes into an infinite loop.
+minimal post-reset changes to the chip.  You can then use the above
+openocd commands to run sram based versions of the programs.  The SRAM
+is smaller and faster than the FLASH memory on the chip so while
+development is easier and faster, once you put the program on flash it
+may behave differently than when run from SRAM.
+
+Documentation.  Again web pages are a moving target.  For these ti
+boards I start at
+http://ti.com/launchpad
+then find the launchpad board page, in this case the launchpad for
+the MSP-EXP432P401R.  As of this writing I see a datasheet there for
+this board.  Now do a search for the part number of the target chip
+MSP432P401R on the ti site, there will be some launchpad hits but
+should be something for the chip itself, you go to that page.  At the
+time of this writing there are three main documents you need.  The
+datasheet for the part, the errata, and the technical reference
+manual.  They post new revisions for these documents over time so
+periodically check back as needed.
+
+We know this is based on an ARM Cortex-M4 processor core, so we also
+need documents from ARM.
+
+Go to
+http://infocenter.arm.com
+The page may change for now expand Cortex-M series processors on the
+left
+Expand Cortex-M4, look for the latest revision I see r0p1 at this time
+Expand that and select the Technical Reference Manual.  I prefer to
+download the PDF version.  You might have to sacrifice an email address
+to get this.
+If you start to read that you find out that the Cortex-M4 is based
+on the ARMv7-m Architecture, so back to the left and expand ARM
+Architecture.  Then under that expand Reference Manuals, then
+ARMv7-m Reference Manual.  then ARMv7-M Architectural Reference Manual
+and get the pdf version.
+These are you primary ARM documents, known as the ARM ARM and the ARM TRM.
+(for this core).  We will investigate to find out if this chip really
+uses the r0p1 version of the core, despite obsolete markings it is
+sometimes good to have the correct docs for the core you have, newer
+may vary. Basically have both newest and correct, and work between
+them, or pick a personal preference.  Be it ARM or MIPS or other you
+should always get the documentation for the processor core as well
+as general chip documentation for the peripherals.  As in this case
+the processor core may be IP purchased by the chip vendor and included
+in the chip product.  Sometimes the chip vendors provide the processor
+vendor documentation in its raw/original form or modified, so still try
+to find the processor vendor documentation where possible.
+
+The schematic shows that LED1 is on P1.0, which can be confusing as
+we get into the ti documentation they use terms like PORT A so P1.0
+on the pin side of things is PORT A bit 0.  That is what we will
+focus on for blinking the led examples.  It also shows P1.0 next to the
+led in the silkscreen on the board.  There is a button or switch S2 on
+pin P1.4, this will be used to get into the bootloader.  So if you
+press the reset button at the top of the board while holding S2 down
+with my bootloader in flash, it will go into the bootloader itself,
+otherwise it will run your program in flash.  I find these leds
+in this case in particular the RGB leds very painful on the eyes so
+I pulled the jumpers that enable that/those leds and dont use them
+in the examples.
