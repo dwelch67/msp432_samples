@@ -208,7 +208,7 @@ So for example if you are in this directory with this README and
 msp432.cfg when you run openocd -f msp432.cfg then
 
 > halt
-> load_image /blinker01/blinker01.sram.elf
+> load_image blinker01/blinker01.sram.elf
 > resume 0x01000000
 
 If you instead are in the blinker01 directory then you would run
@@ -220,23 +220,44 @@ openocd -f ../msp432.cfg to start the server then
 
 To run the sram version of the program.
 
+Even better since it happens to work, sometimes you dont have nor
+need reset, in this case we do.  I thought I had bricked my board
+but got out of it with reset halt.  Puts the target chip in reset then
+releases it but doesnt let it run, so the peripherals, etc are in
+the post-reset state, but we dont allow any code on the flash to
+mess up nor hang the chip.
+
+> reset halt
+> load_image blinker01/blinker01.sram.elf
+> resume 0x01000000
+
 I did say these were going to be flash based examples that load/launch
 through my bootloader, but, you can also generally run them as
 shown above.  To get the bootloader loaded we need to understand this
-sram loading approach.
+sram loading approach first.
 
 The board comes with some demo application, I erased mine ages ago
 so dont know what it did and perhaps it has changed over time.  These
-examples generally assume that you have wiped (destroyed) that as shipped
-application and have loaded one of these examples.  You have been warned.
-This should not adversly affect you the purpose of buying this board
-was to wipe that application and make and load your own.
+examples generally assume that the chip is mostly in a post-reset
+state.  I wiped the flash on mine and put a just stop the WDT program
+in there.  If you wipe the application flash then it will boot
+the BSL, which mucks with a lot of stuff.  You can use the reset halt
+approach above with the sram versions of the examples and not mess
+up the application on flash that came with it.
 
-So to digress further many of these examples have an sram binary
-something.sram.elf that you can load and run in sram, and a
-something.elf which is the program you load using the bootloader.
-And perhaps a something.flash.elf that you can load using my SRAM
-bootloader, more on that shortly.
+Wiping the flash that came with it does not adversely affect your
+board.  You can get the ti tools and/or package and/or files that
+contain the as-shipped example or allow you to re-compile the
+and re-program the board with that example.
+
+These examples will generally build three versions of the program
+a something.sram.elf, this you load and run in sram as shown above
+with openocd.  something.flash.elf, which is built and linked to
+be placed at 0x00000000 and has a vector table.  something.bflash.elf
+which is built and linked to be placed at 0x00020000 and has a vector
+table.  The latter, something.bflash.elf being the primary put on the
+flash version.  There are also motorola s-record versions of the
+binary something.bflash.srec, which is used with my bootloaders.
 
 Normally I start with blinker examples that just blink the led using
 more peripherals and/or information.  Blinking an led is the
@@ -258,8 +279,10 @@ down the road with the bootloader then working backward to the blinkers.
 The as shipped firmware modifies clocks, configures peripherals, so if
 you use a debugger like openocd to stop it then load and run a program
 in SRAM then your uart divisor may be wrong, some peripherals may
-be in a strange state, etc.  So the first examples, before we get to
-the bootloader put us in known states.
+be in a strange state, etc.  With this board you can use the reset
+halt method shown above, but if that doesnt work but you are able
+to halt and run programs then the next three examples put the
+chip in a known state after reset.
 
 flash01, this sram based program erases the user/program flash which
 on this chip when you reset and there is no program there causes
@@ -275,14 +298,16 @@ on the board.
 flash03, this is the baseline program you want to use to for sram based
 develoment.  This program erases the flash and places a program that
 only stops the WDT (watch dog timer), then goes into an infinite loop.
-minimal post-reset changes to the chip.  You can then use the above
-openocd commands to run sram based versions of the programs.  The SRAM
-is smaller and faster than the FLASH memory on the chip so while
+minimal post-reset changes to the chip. (after at least one reset after
+using flash03 to program the flash) You can then use the above openocd
+commands to run sram based versions of the programs.  The SRAM is
+smaller and faster than the FLASH memory on the chip so while
 development is easier and faster, once you put the program on flash it
-may behave differently than when run from SRAM.
+may behave differently than when run from SRAM.  You have been warned.
 
-Documentation.  Again web pages are a moving target.  For these ti
-boards I start at
+Documentation.
+
+Again web pages are a moving target.  For these ti boards I start at
 http://ti.com/launchpad
 then find the launchpad board page, in this case the launchpad for
 the MSP-EXP432P401R.  As of this writing I see a datasheet there for
@@ -335,3 +360,104 @@ otherwise it will run your program in flash.  I find these leds
 in this case in particular the RGB leds very painful on the eyes so
 I pulled the jumpers that enable that/those leds and dont use them
 in the examples.
+
+256KB of flash memory, 64KB of SRAM
+
+This document and project are still a work in progress.
+
+The flash memory is organized into two banks such that you can run
+code in one while programming the other.  What ti is saying is that
+we can run in 0x00000 to 0x1FFFF while erasing/changing 0x20000-0x3FFFF
+or vice versa, but they are saying we cant run in one half while
+erasing/writing that same half.
+
+I have a generic Motorola S-Record file format based bootloader I
+like to use when I can.  Like Intel Hex too but the gnu tools can be
+told to make srec files with a full 32 bit address per line, the S3
+lines basically.  Intel Hex you get 16 bits of address per line and
+periodic updates for the upper half.  That is the only reason I chose
+srec over ihex which is what I used to use.  I have made xmodem based
+ones as well, but like this srec approach.  I have done other
+approaches where you needed a special host program, least favorite
+but would have given us the most flexibility.
+
+So to cut to the chase, at this time I limit the programs the bootloader
+can deal with to 32KB.  The program is pasted or ascii downloaded into
+the bootloader console in srec format.  (see the README files in the
+bootloader directories)  The program is saved in sram initially then
+in a fast and efficient manner then written to flash.  So for an sram
+based bootloader which is desired/needed need to leave some of the
+64KB for the bootloader and its stack, so simply limited everything
+to 32KB.  Yes there is a lot of flash being left unused, but once you
+take the time to understand how to program this flash in application
+and think about how to solve this problem without adding any burden
+to the user (no special programs that have to run on the host, no
+race conditions trying to get the data flashed, while new data is coming
+in, etc), and trying to maximize success, this may make a lot more
+sense.
+
+These are examples NOT libraries, not tools.  You should walk away with
+knowledge not necessarily code.  These are to show you that there is
+nothing to be afraid of here, you can do this too, and for you to go
+off and make your own bootloader solution if you dont like mine or
+write your firmware for this platform.
+
+My programming style may look foreign to you, you might find it
+objectionable in many ways.  Here again I am trying to maximize success
+the lack of stdint, avoiding even gcc libraries much less C, avoiding
+.data at all costs and not assiming .bss has been zeroed, these and
+other things are by design.  This allows any arm-whatever-whatever
+gnu toolchain to have some chance at success.  You do not need some
+special pre-built toolchain package with custom bootstrap and C library
+like you would get with a vendor sandbox or other solutions.  Once
+you start to talk about well known include files, having to find the
+gcc libraries, having to create and port a C library into a baremetal
+system, even having a zeroed .bss and initialized .data, you get into
+either toolchain specific stuff or have to end up having a whole
+toolchain plus baggage package.  My choice of variables is just my
+thing.  The PUT32/GET32 stuff is very much by design, 1) complete
+control over the instruction used, you may thing your volatile pointer
+thing always works, but I have seen it fail with the popular tools 2)
+creates an abstraction point, can use this code against a simulator
+or abstract it on top of an operating system, etc.  Creates an easy
+to interface abstraction layer, and 3) if you dont like the performance
+hit you can always macro it into a volatile pointer thing.  But you
+cant easily turn a volatile pointer thing into an abstraction layer,
+I have watched folks suffer having to do major re-write work to add
+an abstraction layere where there wasnt one, for various reasons.
+It is not pretty.
+
+You dont have to like my bootloader solutions or coding style to
+still learn something here, and see that you too can work at this level
+successfully.  I try to make it as minimal as it gets.  You should as
+I do have one window open with your code and another window open with
+the vendor documentation, you can then see the bits being manipulated
+by the code in the documentation.
+
+bootloader01 is an sram based bootloader, use reset halt as it uses
+the uart, and the BSL mucks with the clocks, as does the as-shipped
+firmware if you have that on the board.  bootloader01 overwrites the
+application flash, you have been warned.  It is designed specifically
+to use the something.bflash.srec files.  It wants programs thare are
+being loaded into flash at 0x20000.  See the README in that directory
+for more information.
+
+I took some shortcuts with the flashing, the docs say before this you
+should make sure this, this, and that are in an idle state, etc.  I
+didnt do all of those checks, press reset and try again if it doesnt
+work.  Also the docs do not quite match the chip behavior, an
+unforunate side effect of just use our library approach rather than
+just get the docs right and both the ti and non-ti developers can
+make the chip work.  This also influenced the bootloader approach I
+am taking of copy to sram then once all there write from sram to flash.
+
+Other bootloaders will follow, but between the sram loading with
+reset halt, or using flash03 or using bootloader01, you can then move
+right into the blinker examples then the uart examples and basically
+follow a natural progression of slowly bringing up a new (to you) chip
+step by step.
+
+Eventually I will have a bootloader on flash that you only need to use
+the uart for and then no longer need to use openocd.  Use it once
+ideally to put the flash based bootloader down, then dont need it
+again.

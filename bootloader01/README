@@ -1,0 +1,156 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+bootloader01
+
+This is the first bootloader.  It is sram based so you have to get
+the openocd tools up or some equivalent.  And you need to get minicom
+or your favorite dumb terminal (uart) program running on the host.
+
+The top level readme covers openocd.  I run linux and use minicom,
+YMMV.  If you use minicom you can try to navigate the menus or you
+can simply take my rc file and put it in the right place:
+
+save this text to the file /etc/minicom/minirc.acm0
+
+---- cut ----
+# Machine-generated file - use "minicom -s" to change parameters.
+pu port             /dev/ttyACM0
+pu minit
+pu mhangup
+pu rtscts           No
+pu sound            No
+---- cut ----
+
+Now with the board plugged in and assuming you dont have other hardware
+that shows up as /dev/ttyACM0
+
+apt-get install minicom lrzsz
+
+(dont need the lrzsz, but if you are doing one do the other, you will
+want it some day)
+
+minicom acm0
+
+will then be a dumb terminal that you need for this bootloader.
+
+You will notice at the bottom of the main source file I have left
+myself commands to cut and paste into the openocd telnet session.
+
+/*
+
+reset halt
+load_image bootloader01/bootloader01.sram.elf
+resume 0x01000000
+
+*/
+
+So four windows open so far 1) window to compile the program 2)
+the openocd server (see top level README), 3) the openocd telnet
+session, 4) the dumb terminal
+
+Once you run those commands then on thd dumb terminal you see something like
+this
+
+12345678
+0100002C
+SREC
+
+It is now ready to take an srec file.  You can do one of two things
+you can open and cut and paste the srec data into the dumb terminal
+or you can download that file using "ascii" (well for minicom,
+ctrl a then press s, then down arrow (or up) to ascii and hit enter,
+in the select a file that pops up just hit enter, now if you put the
+file in the same dir that you were in when you ran minicom you dont
+have to type in a path, just the filename, using the minicom interface
+to navigate through to find the file is painful, just hit enter as soon
+as it comes up and type the full path if it is not already present from
+the last time you ran it.  So far I simply cut and paste into the
+window and not use the ascii download.
+
+Here is a build of blinker01, select all of these lines and cut
+and paste into minicom (with linux just select then the move the
+mouse over the minicom window then click the middle mouse button to
+paste).
+
+
+
+S0180000626C696E6B657230312E62666C6173682E7372656326
+S3150002000000000120410002004700020047000200F2
+S3150002001047000200470002004700020047000200B4
+S3150002002047000200470002004700020047000200A4
+S315000200304700020047000200470002004700020094
+S3150002004000F01CF8FFE7FEE7017070470078704782
+S3150002005001807047008870470160704700687047EA
+S315000200607047000010B5441E30B12046FFF7F8FF76
+S315000200702346013C002BF8D110BD00BF70B545F6F2
+S3150002008084211448FFF7E4FF1348FFF7DFFF40F02F
+S3150002009001011148FFF7D8FF1048FFF7D7FF0546C1
+S315000200A080F001060D480E4C3146FFF7CDFF204683
+S315000200B0013CFFF7D5FF621CF9D10848084C2946D6
+S315000200C0FFF7C2FF2046013CFFF7CAFF631CF9D1C6
+S315000200D0E8E700BF0C480040044C0040024C0040D8
+S309000200E03F0D0300C5
+S70500020000F8
+
+now the dumb terminal shows this, two new lines added
+
+12345678
+0100002C
+SREC
+00020000
+00000000
+
+that means the entry point is 0x20000 which is desired/required, and
+there were no errors (like you went beyond 32KB or tried to load a
+program that has an address not between 0x20000 and 0x27FFF).
+
+Now hit the w key while in the minicom window.
+
+now this text shows up
+
+EEEEEEEE
+00020000
+00021000
+00022000
+00023000
+00024000
+00025000
+00026000
+00027000
+DDDDDDDD
+00020000
+00021000
+00022000
+00023000
+00024000
+00025000
+00026000
+00027000
+FFFFFFFF
+EEEEEEEE
+00000000
+DDDDDDDD
+FFFFFFFF
+
+between the first EEEEEEEE and FFFFFFFF it is erasing 0x20000 based
+flash and writing the downloaded program.  Between the second EEEEEEEE
+and FFFFFFFF it is writing a tiny program at 0x00000 that branches
+to 0x20000.  So now if you hit reset it will run the program you
+just flashed to 0x20000.  Or if you dont want it to run the program
+or you want to use this bootloader to basically do a flash03, you can
+press z at any time before or after using an srec file and it will put
+a small program at 0x00000 that just turns off the WDT and goes into
+an infinite loop.
+
+Adding more text to the dumb terminal when you do that
+
+EEEEEEEE
+00000000
+DDDDDDDD
+FFFFFFFF
+
+Use the Makefile to navigate what files are what here, bootloader01.c
+is the primary example in this directory.
+

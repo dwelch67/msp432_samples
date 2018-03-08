@@ -1,0 +1,22 @@
+
+See the previous level README for schematic and programmers reference
+information, and how to load and run this program.
+
+Very simple led blinker.  LED blinking and this example are basically
+the printf("Hello World!\n"); of baremetal.
+
+As mentioned in the top level README
+
+The schematic shows that LED1 is on P1.0, which can be confusing as
+we get into the ti documentation they use terms like PORT A so P1.0
+on the pin side of things is PORT A bit 0.
+
+This program stops the WDT, configures P1.0 as an output and then turns
+it on and off.  A counting loop if done right (so it doesnt optimize
+away) will suffice for killing enough time so a human can see the led
+toggle between on and off.  Later blinker examples will use timers and
+get accurate control over that rate.  No reason to assume or try to
+tune this loop for a specific time, saying that though if you say double
+the DELAY_COUNT value it should show as a change in the on/off toggle
+time, demonstrating that you were able to change the program and
+see that change reflected.
