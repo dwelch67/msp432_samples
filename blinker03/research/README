@@ -1,0 +1,327 @@
+
+This example uses an external to the core interrupt, within the
+chip but not part of the ARM core.
+
+This walks through how I start the work on an interrupt handler
+for a peripheral.  First start to understand the peripheral.  Choosing
+the first of the TIMER32 timers.
+
+First off I used flash03 to put an infinite loop program on flash that
+wont interfere with what we are doing, erased the bootloader messes
+with clocks and other items, the as-shipped application no doubt
+does as well.
+
+see notmain.0.c
+
+Used the largest prescaler but 16 bit (tried the combinations).
+No interrupts yet we are not there yet.
+
+12345678
+FFFFFFFF 00000000 00000000
+FFFFFFE2 00000000 00000000
+FFFFFFC5 00000000 00000000
+FFFFFFA7 00000000 00000000
+FFFFFF8A 00000000 00000000
+FFFFFF6C 00000000 00000000
+FFFFFF4F 00000000 00000000
+...
+FFFF010B 00000000 00000000
+FFFF00EE 00000000 00000000
+FFFF00D0 00000000 00000000
+FFFF00B3 00000000 00000000
+FFFF0096 00000000 00000000
+FFFF0078 00000000 00000000
+FFFF005B 00000000 00000000
+FFFF003D 00000000 00000000
+FFFF0020 00000000 00000000
+FFFF0002 00000001 00000000
+FFFFFFE5 00000001 00000000
+FFFFFFC7 00000001 00000000
+FFFFFFAA 00000001 00000000
+FFFFFF8D 00000001 00000000
+FFFFFF6F 00000001 00000000
+FFFFFF52 00000001 00000000
+
+So as documented it counts down from 0xFFFF when it hits 0x0000
+and rolls over the raw interrupt happens.
+
+notmain.1.c
+
+The documentation says to clear the interrupt you write to T32INTCLR1
+
+FFFF0138 00000000 00000000 00000000
+FFFF0112 00000000 00000000 00000000
+FFFF00EB 00000000 00000000 00000000
+FFFF00C4 00000000 00000000 00000000
+FFFF009E 00000000 00000000 00000000
+FFFF0077 00000000 00000000 00000000
+FFFF0051 00000000 00000000 00000000
+FFFF002A 00000000 00000000 00000000
+FFFF0003 00000001 00000000 00000001
+FFFFFFDD 00000000 00000000 00000001
+FFFFFFB6 00000000 00000000 00000001
+FFFFFF90 00000000 00000000 00000001
+FFFFFF69 00000000 00000000 00000001
+FFFFFF42 00000000 00000000 00000001
+FFFFFF1C 00000000 00000000 00000001
+
+And that works so we can generate the interrupt within the peripheral
+and then clear that interrupt.
+
+Now understand that before moving forward the bootstrap has this:
+
+reset:
+    cpsid i
+
+which prevents interrupts from entering the core, we do not want th
+enable them into the cpu until the very last step and we know
+everything possible through polling that we can.  Doesnt matter how
+many decades of experience you have it is better to write one or
+a few lines of code at a time rather than a dozen or 100 esp with
+interrupts.  You will spend significantly more time getting the thing
+to work (if you succeed at all) if you try to do it all in one shot.
+
+notmain.2.c
+
+Enable the interrupt in the peripheral, it is nice what ti has done
+here and provided raw interrupt and masked interrupt status.  We
+can see that now the interrupt is unmasked and passes through to the
+next layer.
+
+FFFF00EB 00000000 00000000 00000000
+FFFF00C4 00000000 00000000 00000000
+FFFF009E 00000000 00000000 00000000
+FFFF0077 00000000 00000000 00000000
+FFFF0051 00000000 00000000 00000000
+FFFF002A 00000000 00000000 00000000
+FFFF0003 00000001 00000001 00000001
+FFFFFFDD 00000000 00000000 00000001
+FFFFFFB6 00000000 00000000 00000001
+FFFFFF90 00000000 00000000 00000001
+FFFFFF69 00000000 00000000 00000001
+FFFFFF42 00000000 00000000 00000001
+FFFFFF1C 00000000 00000000 00000001
+FFFFFEF5 00000000 00000000 00000001
+
+notmain.3.c
+
+Now see if it makes it to the edge of the ARM core or if there
+are other gates in the way.
+
+FFFF017A 00000000 00000000 00000000 00000000
+FFFF014A 00000000 00000000 00000000 00000000
+FFFF011B 00000000 00000000 00000000 00000000
+FFFF00EB 00000000 00000000 00000000 00000000
+FFFF00BB 00000000 00000000 00000000 00000000
+FFFF008B 00000000 00000000 00000000 00000000
+FFFF005C 00000000 00000000 00000000 00000000
+FFFF002C 00000000 00000000 00000000 00000000
+FFFFFFFC 00000001 00000001 00000001 00400000
+FFFFFFCD 00000000 00000000 00000001 00400000
+FFFFFF9D 00000000 00000000 00000001 00400000
+FFFFFF6D 00000000 00000000 00000001 00400000
+FFFFFF3D 00000000 00000000 00000001 00400000
+FFFFFF0E 00000000 00000000 00000001 00400000
+FFFFFEDE 00000000 00000000 00000001 00400000
+FFFFFEAE 00000000 00000000 00000001 00400000
+FFFFFE7E 00000000 00000000 00000001 00400000
+
+It appears it makes it. ISRPENDING is set.
+
+And yes, this is how slow I go...
+
+notmain.4.c
+
+The ti datasheet implies that the interrupt is number 25
+
+INTISR[25] Timer32_INT1
+
+which to the arm is external interrupt 25.  But we can confirm
+this.
+
+FFFF012C 00000000 00000000 00000000 00000000
+FFFF00F3 00000000 00000000 00000000 00000000
+FFFF00BA 00000000 00000000 00000000 00000000
+FFFF0081 00000000 00000000 00000000 00000000
+FFFF0048 00000000 00000000 00000000 00000000
+FFFF0010 00000000 00000001 00000001 00429000
+FFFFFFD7 00000000 00000000 00000001 00429000
+FFFFFF9E 00000000 00000000 00000001 00429000
+FFFFFF65 00000000 00000000 00000001 00429000
+FFFFFF2C 00000000 00000000 00000001 00429000
+FFFFFEF3 00000000 00000000 00000001 00429000
+FFFFFEBA 00000000 00000000 00000001 00429000
+
+Now the VECTPENDING bits show 0x29 which is 41 decimal.
+The external interrupts start at vector 16, 16 + 25 = 41 so it is
+as documented external interrupt 25.
+
+can change this
+
+    PUT32(NVIC_ISER0,0xFFFFFFFF);
+
+to
+
+    PUT32(NVIC_ISER0,1<<25);
+
+to enable just that interrupt.  And you will get the same results.
+
+notmain.5.c
+
+So perhaps a smidge premature but willing to take the risk.  Lets
+enable the interrupt into the core
+
+First build the vector table, see sram.s
+
+.word loop /*0x0094 37   External interrupt 21   */
+.word loop /*0x0098 38   External interrupt 22   */
+.word loop /*0x009C 39   External interrupt 23   */
+.word loop /*0x00A0 40   External interrupt 24   */
+.word timer32_handler /*0x00A4 41   External interrupt 25   */
+.word loop /*0x00A8 42   External interrupt 26   */
+.word loop /*0x00AC 43   External interrupt 27   */
+.word loop /*0x00B0 44   External interrupt 28   */
+.word loop /*0x00B4 45   External interrupt 29   */
+.word loop /*0x00B8 46   External interrupt 30   */
+
+This shows external interrupt number, event number and offset into the
+vector table.  Now several things are happening at once here, not
+the normal/typical way to approach this, but to enable interrupts we
+have to do a number of things at once.
+
+First is the table above.  Check the build output.
+
+The stuff on the right is a disassembly I used the disassembler to view
+the output
+
+ 1000098:   010000d1    ldrdeq  r0, [r0, -r1]
+ 100009c:   010000d1    ldrdeq  r0, [r0, -r1]
+ 10000a0:   010000d1    ldrdeq  r0, [r0, -r1]
+ 10000a4:   01000149    tsteq   r0, r9, asr #2
+ 10000a8:   010000d1    ldrdeq  r0, [r0, -r1]
+ 10000ac:   010000d1    ldrdeq  r0, [r0, -r1]
+ 10000b0:   010000d1    ldrdeq  r0, [r0, -r1]
+
+so ignore that what matters is the 32 bit value we can see that for
+all the other vectors it is pointing at 0x10000d0 | 1, or the loop
+label with the lsbit set which is desired/required.
+
+It is at offset 0xA4 as desired if we use 0x01000000 as the base
+of the vector table which we can do by setting VTOR to 0x01000000
+
+The VTOR register has restrictions the lower bits must be zeros this
+is more than aligned correctly for this to work.  Normally the
+first and second entries are related to the reset event, the first
+word is loaded into the stack pointer and the second is the reset vector
+this is an sram based example that is loaded into sram at 0x01000000
+and executed there so to make life easier I use 0x01000000 as the
+entry point, so it wants to jump over the table, and that is a 16
+bit instruction so inserted a nop to make it 32 bits.
+
+_start:
+b reset
+nop
+
+
+01000000 <_start>:
+ 1000000:   e060        b.n 10000c4 <reset>
+ 1000002:   46c0        nop         ; (mov r8, r8)
+ 1000004:   010000d1    ldrdeq  r0, [r0, -r1]
+ 1000008:   010000d1    ldrdeq  r0, [r0, -r1]
+ 100000c:   010000d1    ldrdeq  r0, [r0, -r1]
+
+We also need to enable interrupts to the core
+
+    cpsie i
+
+This all comes from reading the ARM documentation.  The cortex-m4
+techincal reference manual and the armv7-m architectural reference
+manual.
+
+If these things are not done right, are not in the right place it will
+not work and you will either hang the chip or it will go off the rails
+and run amuck and behave strangely (may appear that one thing is
+happening when it is really another).  This is very hard to debug
+you cant really use a debugger as that makes it worse not better if
+it even works at all.  LEDs, uart (yes perfectly fine to use the
+uart in an isr to debug/develop) gpio pins and a scope or logic analyzer.
+
+Now from even more reading of the ARM documentation, you will find
+that the cortex-m was done differently than most processors, normally
+the interrupt handler would need to preserve a bunch of stuff, registers
+and processor state (flags) in some way before using registers or
+flags to handle the interrupt.  Certainly a handler written in C
+would need to be wrapped with such code.  Some compilers have compiler
+(not C language) specific language extensions that essentially do
+this for you.  Ideally you want to know how to do it yourself and
+not rely on hoping the compiler can solve it or solve it correctly.
+Sometimes the hardware does help, for example the flags are preserved
+for you and you just handle registers.  But in the case of the
+cortex-m it does it all it preserves a bunch of stuff on the stack
+in a way that normally compiled functions can be listed directly
+in the vector table, no other work is needed.
+
+Unlike other/earlier ARM cores (full sized not cortex-m) where there
+were separate stack pointers that needed to be setup, that is not the
+case here despite what you think you are reading with respect to the
+cortex-ms that have two stack pointers (not all do, only some do and
+they do not work the way you think they are a royal PITA to do anything
+useful with and would have to question why you would feel the need
+to try).  So the stack is setup.
+
+So we have created a vector table that has at least the one vector
+we are wanting to use at the right offset.  We have used VTOR (not
+not all ARM processors support VTOR have to read the docs or do
+expriments if it says it is implementation defined) to point at
+our vector table.  We have enabled the interrupt in the peripheral,
+enabled the interrupt in the arm core interrupt controller and
+enabled interrupts into the core.  We know how to clear the interrupt
+coming from the peripheral, the last step is to remember to clear
+the interrupt in the core.
+
+void timer32_handler ( void )
+{
+    PUT16(UCA0TXBUF,0x55);
+    PUT32(TIMER32_BASE+0x0C,0);
+    PUT32(NVIC_ICPR0,1<<25);
+}
+
+The interrupts will be more than spaced out enough to use the uart.
+
+The interrupts flow from the peripheral to the core, and as a rule
+I clear the interrupts from the peripheral to the core, so clear
+the timer end first then clear the interrupt controller.  In theory
+this is all we have to do.
+
+I/we know by looking that when notmain() returns it goes into an
+infinite loop.  So can simply end the function after starting the
+timer.
+
+
+12345678
+UU
+
+the U's (0x55 hex) come out slow, so can bump up the rate.
+
+from    PUT32(TIMER32_BASE+0x08,0xA8);
+to      PUT32(TIMER32_BASE+0x08,0xA4);
+
+And thats it this is how I figured out how to get real interrupts
+(not just systick events) to work on this chip.  One step at a time
+took way longer to write this readme than to actually do the work.
+Had I written it all at once the odds of success would have been low
+if I had insisted on leaving it written that way and staring at it
+or not essentially using polling then I would have spent hours/days
+on this rather than minutes.  Not all peripherals/chips have this
+much polling capabilities, if/when you are experienced enough and
+are in a job where you work with cpld/fpga/asic designers you can
+emphasize the importance of polling as well as interrupts both because
+you dont always want to use interrupts only sometimes, but you want
+the flag/feature capabilities of interrupts with or without interrupting
+the core.  They dont always get software you dont always get hardware
+so meet them in the middle.  Show designs like this ti chip as an
+example of something quite usable.
+
+To turn this into an led blinker all I need to do now is remove
+the uart stuff, and add led stuff.
+

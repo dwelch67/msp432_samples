@@ -1,0 +1,23 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+While I do not in any way shape or form condone using a timer and
+interrupts to demonstrate how to blink an LED.  I do condone using
+an LED to develop and test development of an interrupt handler.
+
+This example uses TIMER32 number 1 and interrupts.  See the research
+directory as you should never just bang out code to handle interrupts
+you should always take it very slow almost one line of code at a time
+doing research using polling then when you have exhausted all you can
+do with polling then do the last step or few.  This is not a YMMV thing
+this is a you will spend significantly more time be it hours or weeks
+trying to get what could take you minutes to an hour to do.
+
+The example in this directory is simply a modification of the research
+that used the uart.  Its the final answer does not show the work it
+took to get there.  The subdirectory was left in place for that.
+
+As with almost all of these examples it is assumed flash03 was used
+to put an infinite loop program down before running this program in
+sram.
